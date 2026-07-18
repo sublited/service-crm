@@ -2,21 +2,31 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import Shell from "@/components/Shell";
 import { createClient } from "@/lib/supabaseClient";
-import { formatMoney } from "@/lib/money";
+import { formatMoney, calcTotals } from "@/lib/money";
+import LineItemsEditor, { LineItemDraft } from "@/components/LineItemsEditor";
 
 export default function InvoiceDetailPage({ params }: { params: { id: string } }) {
   const supabase = createClient();
+  const router = useRouter();
   const [invoice, setInvoice] = useState<any>(null);
   const [items, setItems] = useState<any[]>([]);
   const [customer, setCustomer] = useState<any>(null);
   const [payments, setPayments] = useState<any[]>([]);
+  const [services, setServices] = useState<any[]>([]);
   const [sending, setSending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("bank_transfer");
   const [recordingPayment, setRecordingPayment] = useState(false);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+
+  const [editing, setEditing] = useState(false);
+  const [editItems, setEditItems] = useState<LineItemDraft[]>([]);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   async function load() {
     const { data: inv } = await supabase.from("invoices").select("*").eq("id", params.id).single();
@@ -28,12 +38,25 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
       setCustomer(cust);
       const { data: pays } = await supabase.from("payments").select("*").eq("invoice_id", inv.id).order("paid_date");
       setPayments(pays || []);
+      const { data: svc } = await supabase.from("services").select("*").eq("active", true).order("name");
+      setServices(svc || []);
     }
   }
 
   useEffect(() => {
     load();
   }, [params.id]);
+
+  // Default the payment field to the remaining balance so "Record payment"
+  // works immediately for a full payment, instead of relying on the
+  // placeholder (which isn't an actual value and made this look broken).
+  useEffect(() => {
+    if (invoice && !editing) {
+      const balance = Number(invoice.total) - Number(invoice.amount_paid);
+      if (balance > 0) setPaymentAmount(balance.toFixed(2));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invoice?.id, invoice?.amount_paid]);
 
   async function sendEmail() {
     setSending(true);
@@ -50,24 +73,108 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
 
   async function recordPayment(e: React.FormEvent) {
     e.preventDefault();
+    setPaymentError(null);
     const amount = parseFloat(paymentAmount);
-    if (!amount || amount <= 0) return;
+    if (!amount || amount <= 0) {
+      setPaymentError("Enter an amount greater than zero.");
+      return;
+    }
     setRecordingPayment(true);
 
-    await supabase.from("payments").insert({
+    const { error: insertError } = await supabase.from("payments").insert({
       company_id: invoice.company_id,
       invoice_id: invoice.id,
       amount,
       method: paymentMethod,
     });
 
+    if (insertError) {
+      setRecordingPayment(false);
+      setPaymentError(insertError.message);
+      return;
+    }
+
     const newAmountPaid = Number(invoice.amount_paid) + amount;
     const newStatus = newAmountPaid >= Number(invoice.total) ? "paid" : "part_paid";
-    await supabase.from("invoices").update({ amount_paid: newAmountPaid, status: newStatus }).eq("id", invoice.id);
+    const { error: updateError } = await supabase
+      .from("invoices")
+      .update({ amount_paid: newAmountPaid, status: newStatus })
+      .eq("id", invoice.id);
 
-    setPaymentAmount("");
+    if (updateError) {
+      setRecordingPayment(false);
+      setPaymentError(updateError.message);
+      return;
+    }
+
     setRecordingPayment(false);
     load();
+  }
+
+  function startEditing() {
+    setEditItems(
+      items.map((it) => ({
+        service_id: it.service_id,
+        description: it.description,
+        quantity: Number(it.quantity),
+        unit_price: Number(it.unit_price),
+        gst: it.gst,
+      }))
+    );
+    setEditing(true);
+  }
+
+  async function saveEdit() {
+    if (editItems.length === 0) {
+      alert("An invoice needs at least one line item.");
+      return;
+    }
+    setSavingEdit(true);
+    const totals = calcTotals(editItems);
+
+    await supabase.from("invoice_items").delete().eq("invoice_id", invoice.id);
+    await supabase.from("invoice_items").insert(
+      editItems.map((item, i) => ({
+        invoice_id: invoice.id,
+        service_id: item.service_id,
+        description: item.description,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        gst: item.gst,
+        sort_order: i,
+      }))
+    );
+
+    // If this invoice was already partly/fully paid and the new total drops
+    // below what's been paid, don't silently mark it wrong — recompute status
+    // against the new total rather than assuming still-unpaid.
+    const newStatus =
+      Number(invoice.amount_paid) <= 0
+        ? "unpaid"
+        : Number(invoice.amount_paid) >= totals.total
+        ? "paid"
+        : "part_paid";
+
+    await supabase
+      .from("invoices")
+      .update({ subtotal: totals.subtotal, gst_total: totals.gstTotal, total: totals.total, status: newStatus })
+      .eq("id", invoice.id);
+
+    setSavingEdit(false);
+    setEditing(false);
+    load();
+  }
+
+  async function deleteInvoice() {
+    if (!confirm(`Delete invoice ${invoice.invoice_number}? This can't be undone.`)) return;
+    setDeleting(true);
+    const { error } = await supabase.from("invoices").delete().eq("id", invoice.id);
+    setDeleting(false);
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    router.push("/invoices");
   }
 
   if (!invoice) return <Shell><p className="text-sm text-ink/50">Loading…</p></Shell>;
@@ -76,13 +183,13 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
 
   return (
     <Shell>
-      <div className="mb-6 flex items-start justify-between">
+      <div className="mb-6 flex items-start justify-between gap-3">
         <div>
           <Link href="/invoices" className="text-sm text-ink/50 hover:text-ink/80">← Invoices</Link>
           <h1 className="font-display text-2xl font-semibold mt-2">{invoice.invoice_number}</h1>
           <p className="text-sm text-ink/50">{customer?.name}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 justify-end">
           <a href={`/api/pdf/invoice/${invoice.id}`} target="_blank" className="btn-secondary">Download PDF</a>
           <button onClick={sendEmail} disabled={sending || !customer?.email} className="btn-primary">
             {sending ? "Sending…" : "Email to customer"}
@@ -107,39 +214,60 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
         </div>
       </div>
 
-      <div className="card overflow-hidden mb-6">
-        <div className="overflow-x-auto">
-<table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-xs text-ink/50 border-b border-black/[0.06]">
-              <th className="px-5 py-3 font-medium">Description</th>
-              <th className="px-5 py-3 font-medium text-right">Qty</th>
-              <th className="px-5 py-3 font-medium text-right">Unit price</th>
-              <th className="px-5 py-3 font-medium text-right">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((item) => (
-              <tr key={item.id} className="border-b border-black/[0.04] last:border-0">
-                <td className="px-5 py-3">{item.description}</td>
-                <td className="px-5 py-3 text-right">{item.quantity}</td>
-                <td className="px-5 py-3 text-right">{formatMoney(Number(item.unit_price))}</td>
-                <td className="px-5 py-3 text-right">{formatMoney(Number(item.quantity) * Number(item.unit_price))}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {editing ? (
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold">Edit line items</h2>
+            <div className="flex gap-2">
+              <button onClick={() => setEditing(false)} className="btn-secondary" disabled={savingEdit}>Cancel</button>
+              <button onClick={saveEdit} className="btn-primary" disabled={savingEdit}>
+                {savingEdit ? "Saving…" : "Save changes"}
+              </button>
+            </div>
+          </div>
+          <LineItemsEditor items={editItems} setItems={setEditItems} services={services} />
         </div>
-        <div className="px-5 py-4 border-t border-black/[0.06] flex justify-end">
-          <dl className="w-56 space-y-1 text-sm">
-            <div className="flex justify-between"><dt className="text-ink/50">Subtotal</dt><dd>{formatMoney(Number(invoice.subtotal))}</dd></div>
-            <div className="flex justify-between"><dt className="text-ink/50">GST</dt><dd>{formatMoney(Number(invoice.gst_total))}</dd></div>
-            <div className="flex justify-between font-semibold text-base pt-1 border-t border-black/[0.06]"><dt>Total</dt><dd>{formatMoney(Number(invoice.total))}</dd></div>
-          </dl>
+      ) : (
+        <div className="card overflow-hidden mb-6">
+          <div className="flex items-center justify-between px-5 py-3 border-b border-black/[0.06]">
+            <span className="text-xs font-medium text-ink/50 uppercase tracking-wide">Line items</span>
+            <button onClick={startEditing} className="text-xs text-brand-600 hover:text-brand-700 font-medium">
+              Edit items
+            </button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-ink/50 border-b border-black/[0.06]">
+                  <th className="px-5 py-3 font-medium">Description</th>
+                  <th className="px-5 py-3 font-medium text-right">Qty</th>
+                  <th className="px-5 py-3 font-medium text-right">Unit price</th>
+                  <th className="px-5 py-3 font-medium text-right">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item) => (
+                  <tr key={item.id} className="border-b border-black/[0.04] last:border-0">
+                    <td className="px-5 py-3">{item.description}</td>
+                    <td className="px-5 py-3 text-right">{item.quantity}</td>
+                    <td className="px-5 py-3 text-right">{formatMoney(Number(item.unit_price))}</td>
+                    <td className="px-5 py-3 text-right">{formatMoney(Number(item.quantity) * Number(item.unit_price))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="px-5 py-4 border-t border-black/[0.06] flex justify-end">
+            <dl className="w-56 space-y-1 text-sm">
+              <div className="flex justify-between"><dt className="text-ink/50">Subtotal</dt><dd>{formatMoney(Number(invoice.subtotal))}</dd></div>
+              <div className="flex justify-between"><dt className="text-ink/50">GST</dt><dd>{formatMoney(Number(invoice.gst_total))}</dd></div>
+              <div className="flex justify-between font-semibold text-base pt-1 border-t border-black/[0.06]"><dt>Total</dt><dd>{formatMoney(Number(invoice.total))}</dd></div>
+            </dl>
+          </div>
         </div>
-      </div>
+      )}
 
-      <div className="card p-5">
+      <div className="card p-5 mb-6">
         <h2 className="text-sm font-semibold mb-3">Payments</h2>
         {payments.length > 0 && (
           <ul className="space-y-2 mb-4">
@@ -152,12 +280,19 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
           </ul>
         )}
         {balance > 0 && (
-          <form onSubmit={recordPayment} className="flex gap-3 items-end">
-            <div className="flex-1">
+          <form onSubmit={recordPayment} className="flex flex-wrap gap-3 items-end">
+            <div className="flex-1 min-w-[120px]">
               <label className="label">Amount</label>
-              <input type="number" step="0.01" min="0" className="input" value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} placeholder={String(balance)} />
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                className="input"
+                value={paymentAmount}
+                onChange={(e) => setPaymentAmount(e.target.value)}
+              />
             </div>
-            <div className="flex-1">
+            <div className="flex-1 min-w-[140px]">
               <label className="label">Method</label>
               <select className="input" value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
                 <option value="cash">Cash</option>
@@ -170,6 +305,13 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
             <button className="btn-primary" disabled={recordingPayment}>{recordingPayment ? "Saving…" : "Record payment"}</button>
           </form>
         )}
+        {paymentError && <p className="text-sm text-red-600 mt-2">{paymentError}</p>}
+      </div>
+
+      <div className="text-right">
+        <button onClick={deleteInvoice} disabled={deleting} className="text-sm text-red-500 hover:text-red-700">
+          {deleting ? "Deleting…" : "Delete this invoice"}
+        </button>
       </div>
     </Shell>
   );

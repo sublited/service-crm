@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import Shell from "@/components/Shell";
 import { createClient } from "@/lib/supabaseClient";
 import { formatMoney } from "@/lib/money";
@@ -17,20 +18,18 @@ type Service = {
 };
 
 const CATEGORY_SUGGESTIONS = ["Residential", "Commercial", "End of Lease", "Add-on"];
+const EMPTY_FORM = { name: "", category: "", description: "", default_price: "", gst: true };
 
 export default function ServicesPage() {
   const supabase = createClient();
+  const pathname = usePathname();
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({
-    name: "",
-    category: "",
-    description: "",
-    default_price: "",
-    gst: true,
-  });
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [form, setForm] = useState(EMPTY_FORM);
 
   async function load() {
     setLoading(true);
@@ -41,33 +40,78 @@ export default function ServicesPage() {
 
   useEffect(() => {
     load();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
 
-  async function addService(e: React.FormEvent) {
+  function openNewForm() {
+    setForm(EMPTY_FORM);
+    setEditingId(null);
+    setShowForm(true);
+  }
+
+  function openEditForm(service: Service) {
+    setForm({
+      name: service.name,
+      category: service.category || "",
+      description: service.description || "",
+      default_price: String(service.default_price),
+      gst: service.gst,
+    });
+    setEditingId(service.id);
+    setShowForm(true);
+  }
+
+  function closeForm() {
+    setShowForm(false);
+    setEditingId(null);
+    setForm(EMPTY_FORM);
+  }
+
+  async function saveService(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    const { data: companyUser } = await supabase
-      .from("company_users")
-      .select("company_id")
-      .eq("user_id", user!.id)
-      .single();
 
-    await supabase.from("services").insert({
-      ...form,
-      default_price: parseFloat(form.default_price || "0"),
-      company_id: companyUser!.company_id,
-    });
-    setForm({ name: "", category: "", description: "", default_price: "", gst: true });
-    setShowForm(false);
+    if (editingId) {
+      await supabase
+        .from("services")
+        .update({ ...form, default_price: parseFloat(form.default_price || "0") })
+        .eq("id", editingId);
+    } else {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      const { data: companyUser } = await supabase
+        .from("company_users")
+        .select("company_id")
+        .eq("user_id", user!.id)
+        .single();
+
+      await supabase.from("services").insert({
+        ...form,
+        default_price: parseFloat(form.default_price || "0"),
+        company_id: companyUser!.company_id,
+      });
+    }
+
     setSaving(false);
+    closeForm();
     load();
   }
 
   async function toggleActive(service: Service) {
     await supabase.from("services").update({ active: !service.active }).eq("id", service.id);
+    load();
+  }
+
+  async function deleteService(service: Service) {
+    if (!confirm(`Delete "${service.name}"? Quotes and invoices that already used it keep their own copy of the description, so nothing on past documents changes.`)) return;
+    setDeletingId(service.id);
+    const { error } = await supabase.from("services").delete().eq("id", service.id);
+    setDeletingId(null);
+    if (error) {
+      alert(error.message);
+      return;
+    }
     load();
   }
 
@@ -81,13 +125,14 @@ export default function ServicesPage() {
     <Shell>
       <div className="flex items-center justify-between mb-6">
         <h1 className="font-display text-2xl font-semibold">Services & pricing</h1>
-        <button className="btn-primary" onClick={() => setShowForm((s) => !s)}>
+        <button className="btn-primary" onClick={() => (showForm ? closeForm() : openNewForm())}>
           {showForm ? "Cancel" : "+ New service"}
         </button>
       </div>
 
       {showForm && (
-        <form onSubmit={addService} className="card p-5 mb-6 grid grid-cols-2 gap-4">
+        <form onSubmit={saveService} className="card p-5 mb-6 grid grid-cols-2 gap-4">
+          {editingId && <p className="col-span-2 text-xs font-medium text-brand-600">Editing service</p>}
           <div>
             <label className="label">Service name *</label>
             <input required className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Deep Clean" />
@@ -133,8 +178,9 @@ export default function ServicesPage() {
             <label className="label">Description (shown to customers on quotes — supports bullet points and simple tables)</label>
             <RichTextEditor value={form.description} onChange={(html) => setForm({ ...form, description: html })} />
           </div>
-          <div className="col-span-2">
-            <button className="btn-primary" disabled={saving}>{saving ? "Saving…" : "Save service"}</button>
+          <div className="col-span-2 flex gap-2">
+            <button className="btn-primary" disabled={saving}>{saving ? "Saving…" : editingId ? "Save changes" : "Save service"}</button>
+            <button type="button" className="btn-secondary" onClick={closeForm}>Cancel</button>
           </div>
         </form>
       )}
@@ -151,32 +197,42 @@ export default function ServicesPage() {
                 <h2 className="text-sm font-semibold">{category}</h2>
               </div>
               <div className="overflow-x-auto">
-<table className="w-full text-sm">
-                <tbody>
-                  {items.map((s) => (
-                    <tr key={s.id} className="border-b border-black/[0.04] last:border-0">
-                      <td className="px-5 py-3">
-                        <p className={s.active ? "font-medium" : "font-medium text-ink/40 line-through"}>{s.name}</p>
-                        {s.description && (
-                          <div
-                            className="rich-text text-xs text-ink/50 mt-1"
-                            dangerouslySetInnerHTML={{ __html: s.description }}
-                          />
-                        )}
-                      </td>
-                      <td className="px-5 py-3 text-right whitespace-nowrap">
-                        {formatMoney(Number(s.default_price))}
-                        {s.gst && <span className="text-xs text-ink/40"> +GST</span>}
-                      </td>
-                      <td className="px-5 py-3 text-right w-24">
-                        <button onClick={() => toggleActive(s)} className="text-xs text-ink/40 hover:text-ink/70">
-                          {s.active ? "Deactivate" : "Activate"}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                <table className="w-full text-sm">
+                  <tbody>
+                    {items.map((s) => (
+                      <tr key={s.id} className="border-b border-black/[0.04] last:border-0">
+                        <td className="px-5 py-3">
+                          <p className={s.active ? "font-medium" : "font-medium text-ink/40 line-through"}>{s.name}</p>
+                          {s.description && (
+                            <div
+                              className="rich-text text-xs text-ink/50 mt-1"
+                              dangerouslySetInnerHTML={{ __html: s.description }}
+                            />
+                          )}
+                        </td>
+                        <td className="px-5 py-3 text-right whitespace-nowrap">
+                          {formatMoney(Number(s.default_price))}
+                          {s.gst && <span className="text-xs text-ink/40"> +GST</span>}
+                        </td>
+                        <td className="px-5 py-3 text-right whitespace-nowrap">
+                          <button onClick={() => openEditForm(s)} className="text-xs text-ink/40 hover:text-ink/70 mr-3">
+                            Edit
+                          </button>
+                          <button onClick={() => toggleActive(s)} className="text-xs text-ink/40 hover:text-ink/70 mr-3">
+                            {s.active ? "Deactivate" : "Activate"}
+                          </button>
+                          <button
+                            onClick={() => deleteService(s)}
+                            disabled={deletingId === s.id}
+                            className="text-xs text-red-400 hover:text-red-600"
+                          >
+                            {deletingId === s.id ? "Deleting…" : "Delete"}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           ))}

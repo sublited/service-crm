@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import Link from "next/link";
 import Shell from "@/components/Shell";
 import { createClient } from "@/lib/supabaseClient";
@@ -16,6 +17,7 @@ type Customer = {
 
 export default function CustomersPage() {
   const supabase = createClient();
+  const pathname = usePathname();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -32,7 +34,8 @@ export default function CustomersPage() {
 
   useEffect(() => {
     load();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
 
   async function addCustomer(e: React.FormEvent) {
     e.preventDefault();

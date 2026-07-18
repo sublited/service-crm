@@ -16,9 +16,10 @@ shared credential.
 2. In the SQL editor, paste and run everything in `supabase/schema.sql`.
    This creates every table, the `logos` storage bucket, enables RLS, and
    sets up the auto-provisioning trigger.
-   - **Already have this app running from before?** Just run
-     `supabase/migration_002_logo_email_richtext.sql` instead — it adds the
-     new columns/bucket without touching your existing data.
+   - **Already have this app running from before?** Run
+     `supabase/migration_002_logo_email_richtext.sql` then
+     `supabase/migration_003_email_templates.sql` — both are additive and
+     won't touch your existing data.
 3. In Project Settings → API, copy:
    - Project URL → `NEXT_PUBLIC_SUPABASE_URL`
    - anon public key → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
@@ -83,6 +84,44 @@ Share → **Add to Home Screen** to install it as a PWA.
   - Replace the placeholder icons in `public/icons/` with your real logo at
     192×192, 512×512, and a 512×512 "maskable" version, plus a 180×180
     `apple-touch-icon.png`, before shipping this to real users.
+
+## What's new in this pass (bug fixes + requested features)
+
+- **Fixed: "Record payment" doing nothing** — the amount field showed the
+  remaining balance only as placeholder text, not an actual value, so
+  clicking the button with an empty field silently no-opped. It now
+  pre-fills with the balance and surfaces any Supabase error inline instead
+  of failing silently.
+- **Editable invoice & quote line items** — both detail pages now have an
+  "Edit items" button: change quantities/prices, add more services, remove
+  lines, and totals recalculate on save. This is what you use to adjust a
+  quote-converted invoice before sending it.
+- **Delete quotes and invoices** — a "Delete this quote/invoice" link at the
+  bottom of each detail page, with a confirmation prompt.
+- **Edit and delete customers** — the customer detail page now has Edit
+  (inline form) and Delete (warns first if they have quotes/invoices, since
+  deleting a customer deletes those too).
+- **Edit and delete services** — same pattern on the Services page; deleting
+  a service doesn't touch past quotes/invoices, since they keep their own
+  copy of the description at the time they were created.
+- **Editable email subject/body** — Settings → Email templates. Separate
+  templates for quotes and invoices, with `{{customer_name}}`,
+  `{{company_name}}`, `{{doc_number}}`, `{{total}}`, `{{due_date}}` /
+  `{{expiry_date}}` variables. Leave blank to use the built-in default.
+- **Fixed: stray characters (e.g. "&&&&") after names in PDFs** — the
+  built-in PDF font only supports a limited character set; smart quotes,
+  em-dashes, and similar characters from phone keyboards were rendering as
+  garbage glyphs. Text going into PDFs is now sanitized first
+  (`lib/pdfTextSanitize.ts`). Download filenames are also slugified to plain
+  ASCII so nothing unusual shows up in the browser tab either.
+- **Invoices sorted/filterable by paid status** — All / Unpaid / Paid tabs
+  at the top of the Invoices list, unpaid ones sort first.
+- **Fixed: pages showing stale data when navigating back** — Next.js's
+  client-side router cache was serving cached data for the Dashboard,
+  Customers, Services, and Quotes pages for up to ~30 seconds after leaving
+  them. Server-rendered pages now force fresh data on every visit
+  (`export const dynamic = "force-dynamic"`), and client-fetching pages
+  refetch whenever the route is revisited.
 
 ## What's here vs. what's next
 

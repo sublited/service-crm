@@ -3,6 +3,13 @@ import nodemailer from "nodemailer";
 import { renderToBuffer } from "@react-pdf/renderer";
 import { createServerSupabase } from "@/lib/supabaseServer";
 import { BusinessDocPDF } from "@/lib/pdfDocument";
+import {
+  renderTemplate,
+  DEFAULT_QUOTE_SUBJECT,
+  DEFAULT_QUOTE_BODY,
+  DEFAULT_INVOICE_SUBJECT,
+  DEFAULT_INVOICE_BODY,
+} from "@/lib/emailTemplate";
 
 // Every company sends from its own inbox, configured in Settings → Email.
 // This route never touches a shared/global mailbox — GMAIL_USER/PASSWORD
@@ -72,15 +79,26 @@ export async function POST(req: Request) {
     />
   );
 
-  const subject =
+  const subjectTemplate =
     type === "quote"
-      ? `Quote ${docNumber} from ${company?.name}`
-      : `Invoice ${docNumber} from ${company?.name}`;
+      ? company.quote_email_subject || DEFAULT_QUOTE_SUBJECT
+      : company.invoice_email_subject || DEFAULT_INVOICE_SUBJECT;
+  const bodyTemplate =
+    type === "quote"
+      ? company.quote_email_body || DEFAULT_QUOTE_BODY
+      : company.invoice_email_body || DEFAULT_INVOICE_BODY;
 
-  const bodyText =
-    type === "quote"
-      ? `Hi ${customer.name},\n\nPlease find attached quote ${docNumber} for your review.\n\nTotal: ${Number(doc.total).toFixed(2)} AUD\n\nLet us know if you have any questions.\n\n${company?.name}`
-      : `Hi ${customer.name},\n\nPlease find attached invoice ${docNumber}.\n\nTotal due: ${Number(doc.total).toFixed(2)} AUD${doc.due_date ? `\nDue date: ${doc.due_date}` : ""}\n\nThanks for your business.\n\n${company?.name}`;
+  const templateVars = {
+    customer_name: customer.name || "",
+    company_name: company?.name || "",
+    doc_number: docNumber,
+    total: `${Number(doc.total).toFixed(2)} AUD`,
+    due_date: doc.due_date || "",
+    expiry_date: doc.expiry_date || "",
+  };
+
+  const subject = renderTemplate(subjectTemplate, templateVars);
+  const bodyText = renderTemplate(bodyTemplate, templateVars);
 
   try {
     const transporter = getTransporter(company.email_address, company.email_app_password);

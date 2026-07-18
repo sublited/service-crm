@@ -3,6 +3,14 @@
 import { useEffect, useState } from "react";
 import Shell from "@/components/Shell";
 import { createClient } from "@/lib/supabaseClient";
+import {
+  QUOTE_EMAIL_VARIABLES,
+  INVOICE_EMAIL_VARIABLES,
+  DEFAULT_QUOTE_SUBJECT,
+  DEFAULT_QUOTE_BODY,
+  DEFAULT_INVOICE_SUBJECT,
+  DEFAULT_INVOICE_BODY,
+} from "@/lib/emailTemplate";
 
 type Company = {
   id: string;
@@ -26,6 +34,10 @@ type Company = {
   email_address: string | null;
   email_app_password: string | null;
   email_configured: boolean;
+  quote_email_subject: string | null;
+  quote_email_body: string | null;
+  invoice_email_subject: string | null;
+  invoice_email_body: string | null;
 };
 
 export default function SettingsPage() {
@@ -212,6 +224,79 @@ export default function SettingsPage() {
               <span className={`text-sm ${emailTestMessage.ok ? "text-brand-600" : "text-red-600"}`}>{emailTestMessage.text}</span>
             )}
           </div>
+        </section>
+
+        <section className="card p-5">
+          <h2 className="text-sm font-semibold mb-1">Email templates</h2>
+          <p className="text-xs text-ink/50 mb-4">
+            Customize what customers see. Use the variables below anywhere in the subject or body — they'll be
+            filled in automatically when a quote or invoice is sent.
+          </p>
+
+          <div className="mb-5">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-ink/50 mb-2">Quote email</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="label">Subject</label>
+                <input
+                  className="input"
+                  value={company.quote_email_subject ?? ""}
+                  onChange={(e) => set("quote_email_subject", e.target.value)}
+                  placeholder={DEFAULT_QUOTE_SUBJECT}
+                />
+              </div>
+              <div>
+                <label className="label">Body</label>
+                <textarea
+                  className="input font-mono text-xs"
+                  rows={7}
+                  value={company.quote_email_body ?? ""}
+                  onChange={(e) => set("quote_email_body", e.target.value)}
+                  placeholder={DEFAULT_QUOTE_BODY}
+                />
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {QUOTE_EMAIL_VARIABLES.map((v) => (
+                  <code key={v.key} title={v.label} className="text-[11px] bg-black/[0.04] text-ink/60 px-1.5 py-0.5 rounded">
+                    {"{{" + v.key + "}}"}
+                  </code>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-ink/50 mb-2">Invoice email</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="label">Subject</label>
+                <input
+                  className="input"
+                  value={company.invoice_email_subject ?? ""}
+                  onChange={(e) => set("invoice_email_subject", e.target.value)}
+                  placeholder={DEFAULT_INVOICE_SUBJECT}
+                />
+              </div>
+              <div>
+                <label className="label">Body</label>
+                <textarea
+                  className="input font-mono text-xs"
+                  rows={7}
+                  value={company.invoice_email_body ?? ""}
+                  onChange={(e) => set("invoice_email_body", e.target.value)}
+                  placeholder={DEFAULT_INVOICE_BODY}
+                />
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {INVOICE_EMAIL_VARIABLES.map((v) => (
+                  <code key={v.key} title={v.label} className="text-[11px] bg-black/[0.04] text-ink/60 px-1.5 py-0.5 rounded">
+                    {"{{" + v.key + "}}"}
+                  </code>
+                ))}
+              </div>
+            </div>
+          </div>
+          <p className="text-xs text-ink/40 mt-4">Leave either blank to use the default shown as placeholder text. Saved with the button at the bottom of this page.</p>
         </section>
 
         <form onSubmit={save} className="space-y-6">

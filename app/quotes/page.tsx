@@ -4,6 +4,12 @@ import { formatMoney } from "@/lib/money";
 import Link from "next/link";
 import clsx from "clsx";
 
+// Always fetch fresh from Supabase — without this, Next.js's client-side
+// router cache can show stale data for ~30s when navigating back to this page.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+
 const STATUS_STYLE: Record<string, string> = {
   draft: "bg-black/5 text-ink/60",
   sent: "bg-blue-50 text-blue-700",

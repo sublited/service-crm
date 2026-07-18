@@ -36,7 +36,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   return new Response(new Uint8Array(pdf), {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `inline; filename="${quote.quote_number}.pdf"`,
+      "Content-Disposition": `inline; filename="${quote.quote_number.replace(/[^a-zA-Z0-9-]/g, "_")}.pdf"`,
     },
   });
 }

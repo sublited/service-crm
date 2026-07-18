@@ -1,5 +1,6 @@
 import { parse, HTMLElement, Node, NodeType } from "node-html-parser";
 import { Text, View, StyleSheet } from "@react-pdf/renderer";
+import { sanitizePdfText as clean } from "@/lib/pdfTextSanitize";
 
 const styles = StyleSheet.create({
   paragraph: { marginBottom: 4 },
@@ -57,12 +58,12 @@ export function renderRichTextForPdf(html: string, keyPrefix = "rt"): JSX.Elemen
     const tag = el.tagName?.toLowerCase();
 
     if (tag === "p") {
-      const text = inlineText(el).trim();
+      const text = clean(inlineText(el).trim());
       if (text) elements.push(<Text key={`${keyPrefix}-${key++}`} style={styles.paragraph}>{text}</Text>);
     } else if (tag === "ul" || tag === "ol") {
       const items = el.childNodes.filter((c) => c.nodeType === NodeType.ELEMENT_NODE && (c as HTMLElement).tagName?.toLowerCase() === "li");
       items.forEach((li, i) => {
-        const text = inlineText(li).trim();
+        const text = clean(inlineText(li).trim());
         if (!text) return;
         const marker = tag === "ol" ? `${i + 1}.` : "•";
         elements.push(
@@ -85,7 +86,7 @@ export function renderRichTextForPdf(html: string, keyPrefix = "rt"): JSX.Elemen
                   const isHeader = cellEl.tagName?.toLowerCase() === "th";
                   return (
                     <Text key={ci} style={isHeader ? styles.tableHeaderCell : styles.tableCell}>
-                      {inlineText(cellEl).trim()}
+                      {clean(inlineText(cellEl).trim())}
                     </Text>
                   );
                 })}

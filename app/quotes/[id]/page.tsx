@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Shell from "@/components/Shell";
 import { createClient } from "@/lib/supabaseClient";
-import { formatMoney } from "@/lib/money";
+import { formatMoney, calcTotals } from "@/lib/money";
+import LineItemsEditor, { LineItemDraft } from "@/components/LineItemsEditor";
 
 export default function QuoteDetailPage({ params }: { params: { id: string } }) {
   const supabase = createClient();
@@ -14,9 +15,14 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
   const [items, setItems] = useState<any[]>([]);
   const [customer, setCustomer] = useState<any>(null);
   const [linkedInvoiceId, setLinkedInvoiceId] = useState<string | null>(null);
+  const [services, setServices] = useState<any[]>([]);
   const [sending, setSending] = useState(false);
   const [converting, setConverting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [editItems, setEditItems] = useState<LineItemDraft[]>([]);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   async function load() {
     const { data: q } = await supabase.from("quotes").select("*").eq("id", params.id).single();
@@ -28,6 +34,8 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
       setCustomer(cust);
       const { data: linkedInvoice } = await supabase.from("invoices").select("id").eq("quote_id", q.id).maybeSingle();
       setLinkedInvoiceId(linkedInvoice?.id || null);
+      const { data: svc } = await supabase.from("services").select("*").eq("active", true).order("name");
+      setServices(svc || []);
     }
   }
 
@@ -65,6 +73,64 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
     setConverting(false);
     if (res.ok) router.push(`/invoices/${data.invoiceId}`);
     else setMessage("Error: " + (data.error || "could not convert"));
+  }
+
+  function startEditing() {
+    setEditItems(
+      items.map((it) => ({
+        service_id: it.service_id,
+        description: it.description,
+        details: it.details || "",
+        quantity: Number(it.quantity),
+        unit_price: Number(it.unit_price),
+        gst: it.gst,
+      }))
+    );
+    setEditing(true);
+  }
+
+  async function saveEdit() {
+    if (editItems.length === 0) {
+      alert("A quote needs at least one line item.");
+      return;
+    }
+    setSavingEdit(true);
+    const totals = calcTotals(editItems);
+
+    await supabase.from("quote_items").delete().eq("quote_id", quote.id);
+    await supabase.from("quote_items").insert(
+      editItems.map((item, i) => ({
+        quote_id: quote.id,
+        service_id: item.service_id,
+        description: item.description,
+        details: item.details || null,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        gst: item.gst,
+        sort_order: i,
+      }))
+    );
+
+    await supabase
+      .from("quotes")
+      .update({ subtotal: totals.subtotal, gst_total: totals.gstTotal, total: totals.total })
+      .eq("id", quote.id);
+
+    setSavingEdit(false);
+    setEditing(false);
+    load();
+  }
+
+  async function deleteQuote() {
+    if (!confirm(`Delete quote ${quote.quote_number}? This can't be undone.`)) return;
+    setDeleting(true);
+    const { error } = await supabase.from("quotes").delete().eq("id", quote.id);
+    setDeleting(false);
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    router.push("/quotes");
   }
 
   if (!quote) return <Shell><p className="text-sm text-ink/50">Loading…</p></Shell>;
@@ -108,7 +174,28 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
       </div>
 
       <div className="card overflow-hidden">
-        <div className="overflow-x-auto">
+        {editing ? (
+          <div className="p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold">Edit line items</h2>
+              <div className="flex gap-2">
+                <button onClick={() => setEditing(false)} className="btn-secondary" disabled={savingEdit}>Cancel</button>
+                <button onClick={saveEdit} className="btn-primary" disabled={savingEdit}>
+                  {savingEdit ? "Saving…" : "Save changes"}
+                </button>
+              </div>
+            </div>
+            <LineItemsEditor items={editItems} setItems={setEditItems} services={services} showDetails />
+          </div>
+        ) : (
+          <>
+            <div className="flex items-center justify-between px-5 py-3 border-b border-black/[0.06]">
+              <span className="text-xs font-medium text-ink/50 uppercase tracking-wide">Line items</span>
+              <button onClick={startEditing} className="text-xs text-brand-600 hover:text-brand-700 font-medium">
+                Edit items
+              </button>
+            </div>
+            <div className="overflow-x-auto">
 <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs text-ink/50 border-b border-black/[0.06]">
@@ -142,6 +229,8 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
             <div className="flex justify-between font-semibold text-base pt-1 border-t border-black/[0.06]"><dt>Total</dt><dd>{formatMoney(Number(quote.total))}</dd></div>
           </dl>
         </div>
+          </>
+        )}
       </div>
 
       {quote.notes && (
@@ -150,6 +239,12 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
           <p className="text-sm text-ink/70 whitespace-pre-wrap">{quote.notes}</p>
         </div>
       )}
+
+      <div className="text-right mt-6">
+        <button onClick={deleteQuote} disabled={deleting} className="text-sm text-red-500 hover:text-red-700">
+          {deleting ? "Deleting…" : "Delete this quote"}
+        </button>
+      </div>
     </Shell>
   );
 }

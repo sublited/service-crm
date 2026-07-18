@@ -32,6 +32,10 @@ create table companies (
   email_address text,
   email_app_password text,
   email_configured boolean default false,
+  quote_email_subject text,
+  quote_email_body text,
+  invoice_email_subject text,
+  invoice_email_body text,
   created_at timestamptz default now()
 );
 

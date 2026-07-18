@@ -1,6 +1,7 @@
 import { Document, Page, Text, View, StyleSheet, Image } from "@react-pdf/renderer";
 import { formatMoney } from "@/lib/money";
 import { renderRichTextForPdf } from "@/lib/htmlToPdf";
+import { sanitizePdfText as clean } from "@/lib/pdfTextSanitize";
 
 type Theme = {
   accent: string;
@@ -105,22 +106,23 @@ export function BusinessDocPDF({
 }) {
   const t = THEMES[theme];
   const styles = makeStyles(t);
+  const pdfTitle = clean(`${docNumber} - ${customer?.name || "Customer"}`);
 
   return (
-    <Document>
+    <Document title={pdfTitle} author={clean(company?.name) || "Service CRM"}>
       <Page size="A4" style={styles.page}>
         <View style={styles.headerRow}>
           <View>
             {company?.logo_url && <Image src={company.logo_url} style={styles.logo} />}
-            <Text style={styles.companyName}>{company?.name || "Your Business"}</Text>
-            {company?.abn && <Text style={styles.muted}>ABN {company.abn}</Text>}
-            {company?.address && <Text style={styles.muted}>{company.address}</Text>}
-            {company?.email && <Text style={styles.muted}>{company.email}</Text>}
-            {company?.phone && <Text style={styles.muted}>{company.phone}</Text>}
+            <Text style={styles.companyName}>{clean(company?.name) || "Your Business"}</Text>
+            {company?.abn && <Text style={styles.muted}>ABN {clean(company.abn)}</Text>}
+            {company?.address && <Text style={styles.muted}>{clean(company.address)}</Text>}
+            {company?.email && <Text style={styles.muted}>{clean(company.email)}</Text>}
+            {company?.phone && <Text style={styles.muted}>{clean(company.phone)}</Text>}
           </View>
           <View>
             <Text style={styles.docTitle}>{docType}</Text>
-            <Text style={styles.docMeta}>{docNumber}</Text>
+            <Text style={styles.docMeta}>{clean(docNumber)}</Text>
             <Text style={[styles.docMeta, styles.muted]}>Issued {issuedDate}</Text>
             {dueOrExpiryDate && <Text style={[styles.docMeta, styles.muted]}>{dueOrExpiryLabel} {dueOrExpiryDate}</Text>}
           </View>
@@ -130,10 +132,10 @@ export function BusinessDocPDF({
 
         <View style={styles.section}>
           <Text style={styles.label}>Bill to</Text>
-          <Text>{customer?.name}</Text>
-          {customer?.company_name && <Text>{customer.company_name}</Text>}
-          {customer?.address && <Text style={styles.muted}>{customer.address}</Text>}
-          {customer?.email && <Text style={styles.muted}>{customer.email}</Text>}
+          <Text>{clean(customer?.name)}</Text>
+          {customer?.company_name && <Text>{clean(customer.company_name)}</Text>}
+          {customer?.address && <Text style={styles.muted}>{clean(customer.address)}</Text>}
+          {customer?.email && <Text style={styles.muted}>{clean(customer.email)}</Text>}
         </View>
 
         <View style={styles.table}>
@@ -146,7 +148,7 @@ export function BusinessDocPDF({
           {items.map((item, i) => (
             <View style={styles.tableRow} key={i}>
               <View style={styles.colDesc}>
-                <Text>{item.description}</Text>
+                <Text>{clean(item.description)}</Text>
                 {showItemDetails && item.details && (
                   <View style={styles.itemDetails}>{renderRichTextForPdf(item.details, `item-${i}`)}</View>
                 )}
@@ -167,19 +169,19 @@ export function BusinessDocPDF({
         {notes && (
           <View style={styles.section}>
             <Text style={styles.label}>Notes</Text>
-            <Text>{notes}</Text>
+            <Text>{clean(notes)}</Text>
           </View>
         )}
 
         {(company?.bank_details || company?.payid) && docType !== "QUOTE" && (
           <View style={styles.section}>
             <Text style={styles.label}>Payment details</Text>
-            {company?.bank_details && <Text>{company.bank_details}</Text>}
-            {company?.payid && <Text>PayID: {company.payid}</Text>}
+            {company?.bank_details && <Text>{clean(company.bank_details)}</Text>}
+            {company?.payid && <Text>PayID: {clean(company.payid)}</Text>}
           </View>
         )}
 
-        {company?.invoice_footer && <Text style={styles.footer}>{company.invoice_footer}</Text>}
+        {company?.invoice_footer && <Text style={styles.footer}>{clean(company.invoice_footer)}</Text>}
       </Page>
     </Document>
   );

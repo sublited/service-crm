@@ -35,7 +35,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   return new Response(new Uint8Array(pdf), {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `inline; filename="${invoice.invoice_number}.pdf"`,
+      "Content-Disposition": `inline; filename="${invoice.invoice_number.replace(/[^a-zA-Z0-9-]/g, "_")}.pdf"`,
     },
   });
 }

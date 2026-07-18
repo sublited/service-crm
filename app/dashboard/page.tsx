@@ -4,6 +4,12 @@ import { getCurrentCompanyId } from "@/lib/currentCompany";
 import { formatMoney } from "@/lib/money";
 import Link from "next/link";
 
+// Always fetch fresh from Supabase — without this, Next.js's client-side
+// router cache can show stale data for ~30s when navigating back to this page.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+
 export default async function DashboardPage() {
   const companyId = await getCurrentCompanyId();
   const supabase = createServerSupabase();
