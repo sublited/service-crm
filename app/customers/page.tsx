@@ -13,7 +13,10 @@ type Customer = {
   company_name: string | null;
   phone: string | null;
   email: string | null;
+  address: string | null;
   created_at: string;
+  invoices: { invoice_number: string }[];
+  quotes: { quote_number: string }[];
 };
 
 const EMPTY_FORM = { name: "", company_name: "", phone: "", email: "", address: "" };
@@ -34,8 +37,11 @@ export default function CustomersPage() {
 
   async function load() {
     setLoading(true);
-    const { data } = await supabase.from("customers").select("*").order("created_at", { ascending: false });
-    setCustomers(data || []);
+    const { data } = await supabase
+      .from("customers")
+      .select("*, invoices(invoice_number), quotes(quote_number)")
+      .order("created_at", { ascending: false });
+    setCustomers((data as any) || []);
     setLoading(false);
   }
 
@@ -86,9 +92,21 @@ export default function CustomersPage() {
     }
   }
 
-  const filtered = customers.filter((c) =>
-    `${c.name} ${c.company_name ?? ""} ${c.email ?? ""}`.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = customers.filter((c) => {
+    const haystack = [
+      c.name,
+      c.company_name,
+      c.email,
+      c.phone,
+      c.address,
+      ...(c.invoices || []).map((i) => i.invoice_number),
+      ...(c.quotes || []).map((q) => q.quote_number),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(search.toLowerCase());
+  });
 
   return (
     <Shell>
@@ -178,7 +196,7 @@ export default function CustomersPage() {
 
       <input
         className="input mb-4 max-w-sm"
-        placeholder="Search customers…"
+        placeholder="Search by name, company, email, phone, address, or invoice/quote number…"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
       />

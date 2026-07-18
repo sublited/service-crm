@@ -33,7 +33,12 @@ export default function CustomerDetailPage({ params }: { params: { id: string } 
       });
       const [{ data: q }, { data: inv }] = await Promise.all([
         supabase.from("quotes").select("*").eq("customer_id", params.id).order("created_at", { ascending: false }),
-        supabase.from("invoices").select("*").eq("customer_id", params.id).order("created_at", { ascending: false }),
+        supabase
+          .from("invoices")
+          .select("*")
+          .eq("customer_id", params.id)
+          .is("archived_at", null)
+          .order("created_at", { ascending: false }),
       ]);
       setQuotes(q || []);
       setInvoices(inv || []);

@@ -30,12 +30,13 @@ export default function InvoicesPage() {
   const [invoices, setInvoices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>("all");
+  const [search, setSearch] = useState("");
 
   async function load() {
     setLoading(true);
     const { data } = await supabase
       .from("invoices")
-      .select("*, customers(name, company_name)")
+      .select("*, customers(name, company_name, email, phone, address)")
       .order("created_at", { ascending: false });
     setInvoices(data || []);
     setLoading(false);
@@ -65,7 +66,23 @@ export default function InvoicesPage() {
           if (filter === "paid") return inv.status === "paid";
           return true;
         })
-  ).sort(filter === "archived" ? (a, b) => 0 : unpaidFirst);
+  )
+    .filter((inv) => {
+      if (!search.trim()) return true;
+      const haystack = [
+        inv.invoice_number,
+        inv.customers?.name,
+        inv.customers?.company_name,
+        inv.customers?.email,
+        inv.customers?.phone,
+        inv.customers?.address,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(search.toLowerCase());
+    })
+    .sort(filter === "archived" ? (a, b) => 0 : unpaidFirst);
 
   const counts = {
     all: active.length,
@@ -80,6 +97,13 @@ export default function InvoicesPage() {
         <h1 className="font-display text-2xl font-semibold">Invoices</h1>
         <Link href="/invoices/new" className="btn-primary">+ New invoice</Link>
       </div>
+
+      <input
+        className="input mb-4 max-w-sm"
+        placeholder="Search by invoice #, customer, email, phone, address…"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+      />
 
       <div className="flex gap-2 mb-4 flex-wrap">
         {(["all", "unpaid", "paid", "archived"] as Filter[]).map((f) => (
