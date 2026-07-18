@@ -17,9 +17,10 @@ shared credential.
    This creates every table, the `logos` storage bucket, enables RLS, and
    sets up the auto-provisioning trigger.
    - **Already have this app running from before?** Run
-     `supabase/migration_002_logo_email_richtext.sql` then
-     `supabase/migration_003_email_templates.sql` — both are additive and
-     won't touch your existing data.
+     `supabase/migration_002_logo_email_richtext.sql`,
+     `supabase/migration_003_email_templates.sql`, then
+     `supabase/migration_004_archive_invoices.sql` — all additive, none
+     touch your existing data.
 3. In Project Settings → API, copy:
    - Project URL → `NEXT_PUBLIC_SUPABASE_URL`
    - anon public key → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
@@ -84,6 +85,26 @@ Share → **Add to Home Screen** to install it as a PWA.
   - Replace the placeholder icons in `public/icons/` with your real logo at
     192×192, 512×512, and a 512×512 "maskable" version, plus a 180×180
     `apple-touch-icon.png`, before shipping this to real users.
+
+## What's new in this pass (archiving + quick customer entry)
+
+- **Archive invoices instead of deleting** — from an invoice's detail page,
+  "Archive this invoice" opens a small form requiring a reason: **Duplicate**
+  (asks which invoice number it duplicates), **Replaced by an updated
+  invoice** (asks for the new invoice's number), or **Other** (free-text
+  comment). Delete is still there for genuine mistakes, but archiving is now
+  the safer default — nothing is lost, and the reason is kept on record.
+- **Archived tab** — Invoices list now has an "Archived" filter tab alongside
+  All/Unpaid/Paid, showing the reason for each. Archived invoices are
+  excluded from the Dashboard's outstanding-balance and revenue totals.
+  "Unarchive" restores one to the normal list at any time.
+- **Paste a customer in as JSON** — on the "+ New customer" form, "Paste
+  from JSON" reveals a box where you can paste a JSON object (or use "Paste
+  from clipboard") and click "Parse & fill form" — it matches common key
+  names (`name`/`full_name`, `phone`/`mobile`, `email`, `address`, etc.) and
+  fills the form fields, which you can still adjust before saving. Useful
+  when you're copying a contact's details from an email, another CRM
+  export, or a lead-capture form.
 
 ## What's new in this pass (bug fixes + requested features)
 

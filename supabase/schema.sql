@@ -137,6 +137,10 @@ create table invoices (
   issued_date date default current_date,
   due_date date,
   created_at timestamptz default now(),
+  archived_at timestamptz,
+  archived_reason text,
+  archived_related_invoice_number text,
+  archived_comment text,
   unique (company_id, invoice_number)
 );
 
@@ -186,6 +190,7 @@ create index idx_invoices_company on invoices(company_id);
 create index idx_invoices_customer on invoices(customer_id);
 create index idx_invoice_items_invoice on invoice_items(invoice_id);
 create index idx_quote_items_quote on quote_items(quote_id);
+create index idx_invoices_archived on invoices(company_id, archived_at);
 create index idx_activity_entity on activity_log(entity_type, entity_id);
 
 -- ----------------------------------------------------------------------------

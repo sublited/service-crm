@@ -28,6 +28,14 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
   const [savingEdit, setSavingEdit] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  const [showArchiveForm, setShowArchiveForm] = useState(false);
+  const [archiveReason, setArchiveReason] = useState<"duplicate" | "updated" | "other">("duplicate");
+  const [archiveRelatedNumber, setArchiveRelatedNumber] = useState("");
+  const [archiveComment, setArchiveComment] = useState("");
+  const [archiving, setArchiving] = useState(false);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
+  const [unarchiving, setUnarchiving] = useState(false);
+
   async function load() {
     const { data: inv } = await supabase.from("invoices").select("*").eq("id", params.id).single();
     setInvoice(inv);
@@ -165,6 +173,57 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
     load();
   }
 
+  async function submitArchive(e: React.FormEvent) {
+    e.preventDefault();
+    setArchiveError(null);
+
+    if ((archiveReason === "duplicate" || archiveReason === "updated") && !archiveRelatedNumber.trim()) {
+      setArchiveError(
+        archiveReason === "duplicate"
+          ? "Enter the invoice number this duplicates."
+          : "Enter the invoice number that replaces this one."
+      );
+      return;
+    }
+    if (archiveReason === "other" && !archiveComment.trim()) {
+      setArchiveError("Add a short comment explaining why this is being archived.");
+      return;
+    }
+
+    setArchiving(true);
+    const { error } = await supabase
+      .from("invoices")
+      .update({
+        archived_at: new Date().toISOString(),
+        archived_reason: archiveReason,
+        archived_related_invoice_number: archiveReason === "other" ? null : archiveRelatedNumber.trim(),
+        archived_comment: archiveReason === "other" ? archiveComment.trim() : null,
+      })
+      .eq("id", invoice.id);
+    setArchiving(false);
+
+    if (error) {
+      setArchiveError(error.message);
+      return;
+    }
+    setShowArchiveForm(false);
+    load();
+  }
+
+  async function unarchive() {
+    setUnarchiving(true);
+    const { error } = await supabase
+      .from("invoices")
+      .update({ archived_at: null, archived_reason: null, archived_related_invoice_number: null, archived_comment: null })
+      .eq("id", invoice.id);
+    setUnarchiving(false);
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    load();
+  }
+
   async function deleteInvoice() {
     if (!confirm(`Delete invoice ${invoice.invoice_number}? This can't be undone.`)) return;
     setDeleting(true);
@@ -198,6 +257,22 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
       </div>
 
       {message && <p className="text-sm mb-4 text-brand-600">{message}</p>}
+
+      {invoice.archived_at && (
+        <div className="card p-4 mb-6 bg-amber-50/60 border-amber-200 flex items-center justify-between gap-3">
+          <div className="text-sm">
+            <p className="font-medium text-amber-800">Archived</p>
+            <p className="text-amber-700/80">
+              {invoice.archived_reason === "duplicate" && `Duplicate of invoice ${invoice.archived_related_invoice_number}`}
+              {invoice.archived_reason === "updated" && `Replaced by invoice ${invoice.archived_related_invoice_number}`}
+              {invoice.archived_reason === "other" && invoice.archived_comment}
+            </p>
+          </div>
+          <button onClick={unarchive} disabled={unarchiving} className="btn-secondary shrink-0">
+            {unarchiving ? "Restoring…" : "Unarchive"}
+          </button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="card p-4">
@@ -307,6 +382,66 @@ export default function InvoiceDetailPage({ params }: { params: { id: string } }
         )}
         {paymentError && <p className="text-sm text-red-600 mt-2">{paymentError}</p>}
       </div>
+
+      {!invoice.archived_at && (
+        <div className="card p-5 mb-6">
+          {showArchiveForm ? (
+            <form onSubmit={submitArchive} className="space-y-3">
+              <h2 className="text-sm font-semibold">Archive this invoice</h2>
+              <div>
+                <label className="label">Reason</label>
+                <select
+                  className="input"
+                  value={archiveReason}
+                  onChange={(e) => setArchiveReason(e.target.value as typeof archiveReason)}
+                >
+                  <option value="duplicate">Duplicate invoice</option>
+                  <option value="updated">Replaced by an updated invoice</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+
+              {(archiveReason === "duplicate" || archiveReason === "updated") && (
+                <div>
+                  <label className="label">
+                    {archiveReason === "duplicate" ? "Duplicate of invoice number" : "Replaced by invoice number"}
+                  </label>
+                  <input
+                    className="input"
+                    value={archiveRelatedNumber}
+                    onChange={(e) => setArchiveRelatedNumber(e.target.value)}
+                    placeholder="INV-0042"
+                  />
+                </div>
+              )}
+
+              {archiveReason === "other" && (
+                <div>
+                  <label className="label">Comment</label>
+                  <textarea
+                    className="input"
+                    rows={2}
+                    value={archiveComment}
+                    onChange={(e) => setArchiveComment(e.target.value)}
+                    placeholder="Why is this being archived?"
+                  />
+                </div>
+              )}
+
+              {archiveError && <p className="text-sm text-red-600">{archiveError}</p>}
+
+              <div className="flex gap-2">
+                <button className="btn-primary" disabled={archiving}>{archiving ? "Archiving…" : "Archive invoice"}</button>
+                <button type="button" className="btn-secondary" onClick={() => setShowArchiveForm(false)}>Cancel</button>
+              </div>
+            </form>
+          ) : (
+            <button onClick={() => setShowArchiveForm(true)} className="text-sm text-ink/60 hover:text-ink font-medium">
+              Archive this invoice
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="text-right">
         <button onClick={deleteInvoice} disabled={deleting} className="text-sm text-red-500 hover:text-red-700">

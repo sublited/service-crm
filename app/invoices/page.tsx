@@ -15,7 +15,14 @@ const STATUS_STYLE: Record<string, string> = {
   overdue: "bg-red-50 text-red-700",
 };
 
-type Filter = "all" | "unpaid" | "paid";
+type Filter = "all" | "unpaid" | "paid" | "archived";
+
+function archiveReasonLabel(inv: any) {
+  if (inv.archived_reason === "duplicate") return `Duplicate of ${inv.archived_related_invoice_number}`;
+  if (inv.archived_reason === "updated") return `Replaced by ${inv.archived_related_invoice_number}`;
+  if (inv.archived_reason === "other") return inv.archived_comment || "Other";
+  return "";
+}
 
 export default function InvoicesPage() {
   const supabase = createClient();
@@ -47,18 +54,24 @@ export default function InvoicesPage() {
     return weight(a.status) - weight(b.status);
   };
 
-  const filtered = invoices
-    .filter((inv) => {
-      if (filter === "unpaid") return inv.status !== "paid";
-      if (filter === "paid") return inv.status === "paid";
-      return true;
-    })
-    .sort(unpaidFirst);
+  const active = invoices.filter((inv) => !inv.archived_at);
+  const archived = invoices.filter((inv) => !!inv.archived_at);
+
+  const filtered = (
+    filter === "archived"
+      ? archived
+      : active.filter((inv) => {
+          if (filter === "unpaid") return inv.status !== "paid";
+          if (filter === "paid") return inv.status === "paid";
+          return true;
+        })
+  ).sort(filter === "archived" ? (a, b) => 0 : unpaidFirst);
 
   const counts = {
-    all: invoices.length,
-    unpaid: invoices.filter((i) => i.status !== "paid").length,
-    paid: invoices.filter((i) => i.status === "paid").length,
+    all: active.length,
+    unpaid: active.filter((i) => i.status !== "paid").length,
+    paid: active.filter((i) => i.status === "paid").length,
+    archived: archived.length,
   };
 
   return (
@@ -68,8 +81,8 @@ export default function InvoicesPage() {
         <Link href="/invoices/new" className="btn-primary">+ New invoice</Link>
       </div>
 
-      <div className="flex gap-2 mb-4">
-        {(["all", "unpaid", "paid"] as Filter[]).map((f) => (
+      <div className="flex gap-2 mb-4 flex-wrap">
+        {(["all", "unpaid", "paid", "archived"] as Filter[]).map((f) => (
           <button
             key={f}
             onClick={() => setFilter(f)}
@@ -87,7 +100,7 @@ export default function InvoicesPage() {
         {loading ? (
           <p className="p-6 text-sm text-ink/50">Loading…</p>
         ) : !filtered.length ? (
-          <p className="p-6 text-sm text-ink/50">No invoices here.</p>
+          <p className="p-6 text-sm text-ink/50">{filter === "archived" ? "No archived invoices." : "No invoices here."}</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -95,9 +108,13 @@ export default function InvoicesPage() {
                 <tr className="text-left text-xs text-ink/50 border-b border-black/[0.06]">
                   <th className="px-5 py-3 font-medium">Invoice</th>
                   <th className="px-5 py-3 font-medium">Customer</th>
-                  <th className="px-5 py-3 font-medium">Status</th>
+                  {filter === "archived" ? (
+                    <th className="px-5 py-3 font-medium">Archive reason</th>
+                  ) : (
+                    <th className="px-5 py-3 font-medium">Status</th>
+                  )}
                   <th className="px-5 py-3 font-medium text-right">Total</th>
-                  <th className="px-5 py-3 font-medium text-right">Balance</th>
+                  <th className="px-5 py-3 font-medium text-right">{filter === "archived" ? "" : "Balance"}</th>
                 </tr>
               </thead>
               <tbody>
@@ -107,13 +124,19 @@ export default function InvoicesPage() {
                       <Link href={`/invoices/${inv.id}`} className="font-medium hover:text-brand-600">{inv.invoice_number}</Link>
                     </td>
                     <td className="px-5 py-3 text-ink/70">{inv.customers?.name}</td>
-                    <td className="px-5 py-3">
-                      <span className={clsx("text-xs px-2 py-1 rounded-full font-medium capitalize", STATUS_STYLE[inv.status])}>
-                        {inv.status.replace("_", " ")}
-                      </span>
-                    </td>
+                    {filter === "archived" ? (
+                      <td className="px-5 py-3 text-ink/60">{archiveReasonLabel(inv)}</td>
+                    ) : (
+                      <td className="px-5 py-3">
+                        <span className={clsx("text-xs px-2 py-1 rounded-full font-medium capitalize", STATUS_STYLE[inv.status])}>
+                          {inv.status.replace("_", " ")}
+                        </span>
+                      </td>
+                    )}
                     <td className="px-5 py-3 text-right">{formatMoney(Number(inv.total))}</td>
-                    <td className="px-5 py-3 text-right">{formatMoney(Number(inv.total) - Number(inv.amount_paid))}</td>
+                    <td className="px-5 py-3 text-right">
+                      {filter === "archived" ? "" : formatMoney(Number(inv.total) - Number(inv.amount_paid))}
+                    </td>
                   </tr>
                 ))}
               </tbody>

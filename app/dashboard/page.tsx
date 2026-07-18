@@ -21,12 +21,14 @@ export default async function DashboardPage() {
         .from("invoices")
         .select("total, amount_paid")
         .eq("company_id", companyId)
+        .is("archived_at", null)
         .in("status", ["unpaid", "part_paid", "overdue"]),
       supabase.from("quotes").select("id", { count: "exact" }).eq("company_id", companyId).eq("status", "sent"),
       supabase
         .from("invoices")
         .select("amount_paid, issued_date")
         .eq("company_id", companyId)
+        .is("archived_at", null)
         .gte("issued_date", new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10)),
     ]);
 
